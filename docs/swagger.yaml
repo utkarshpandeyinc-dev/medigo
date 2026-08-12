@@ -1,0 +1,141 @@
+openapi: 3.0.0
+info:
+  title: Medigo Healthcare Ecosystem API
+  description: Integrated backend connecting Patients, Hospitals, Pharmacies, and Logistics.
+  version: 1.0.0
+servers:
+  - url: https://api.medigo.com/v1
+    description: Production Server
+  - url: http://localhost:3000/v1
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+paths:
+  /sos/trigger:
+    post:
+      summary: Trigger an SOS Emergency Alert
+      description: Finds nearest 3 hospitals via PostGIS, locks a slot, and broadcasts emergency.
+      tags:
+        - Emergency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+                - latitude
+                - longitude
+              properties:
+                patientId:
+                  type: string
+                  example: "uuid-1234"
+                latitude:
+                  type: number
+                  example: 28.7041
+                longitude:
+                  type: number
+                  example: 77.1025
+      responses:
+        '201':
+          description: SOS Alert dispatched successfully
+        '400':
+          description: Missing required fields
+        '404':
+          description: No active hospitals found nearby
+
+  /sos/{alertId}/status:
+    patch:
+      summary: Update SOS Alert Status
+      description: Hospital updates the alert status (e.g., DISPATCHED, RESOLVED).
+      tags:
+        - Emergency
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [DISPATCHED, RESOLVED, CANCELLED]
+      responses:
+        '200':
+          description: Status updated
+
+  /ecommerce/checkout:
+    post:
+      summary: Process Pharmacy E-Commerce Checkout
+      description: Calculates pricing, processes Stripe payment, and decrements stock.
+      tags:
+        - E-Commerce
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+                - pharmacyId
+                - items
+                - deliveryDistanceKm
+              properties:
+                patientId:
+                  type: string
+                pharmacyId:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      sku:
+                        type: string
+                      quantity:
+                        type: integer
+                paymentMethod:
+                  type: string
+                  enum: [UPI, CARD, CASH]
+                deliveryDistanceKm:
+                  type: number
+      responses:
+        '200':
+          description: Checkout processed, Stripe payment intent returned
+        '400':
+          description: Insufficient stock or invalid payload
+
+  /ehr/secure-access:
+    get:
+      summary: Access Encrypted Patient EHR
+      description: Requires temporal token generated during SOS dispatch to access medical vault.
+      tags:
+        - Health Records
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Decrypted EHR JSON data returned

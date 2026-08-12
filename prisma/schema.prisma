@@ -1,0 +1,223 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  HOSPITAL_ADMIN
+  DOCTOR
+  PHARMACY_OWNER
+  WHOLESALER_ADMIN
+  DELIVERY_PARTNER
+  SUPER_ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role
+  firstName String?
+  lastName  String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patientRecord PatientHealthRecord?
+  hospital      Hospital?            @relation(fields: [hospitalId], references: [id])
+  hospitalId    String?
+  pharmacy      Pharmacy?            @relation(fields: [pharmacyId], references: [id])
+  pharmacyId    String?
+  wholesaler    Wholesaler?          @relation(fields: [wholesalerId], references: [id])
+  wholesalerId  String?
+  orders        Order[]
+  deliveryJobs  DeliveryJob[]
+}
+
+model PatientHealthRecord {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  encryptedData  String   // AES-256 Encrypted JSON containing medical history, allergies, etc.
+  bloodGroup     String?
+  emergencyContact String?
+  fhirPatientId  String?
+  abdmId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Hospital {
+  id           String      @id @default(uuid())
+  name         String
+  address      String
+  location     Unsupported("geometry(Point, 4326)")? // PostGIS Point
+  latitude     Float
+  longitude    Float
+  admins       User[]
+  ambulances   Ambulance[]
+  sosAlerts    SOSAlert[]
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Ambulance {
+  id          String   @id @default(uuid())
+  hospitalId  String
+  hospital    Hospital @relation(fields: [hospitalId], references: [id])
+  vehicleNo   String   @unique
+  type        String   // ALS or BLS
+  isAvailable Boolean  @default(true)
+  currentLat  Float?
+  currentLng  Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SOSAlert {
+  id           String    @id @default(uuid())
+  patientId    String
+  hospitalId   String
+  hospital     Hospital  @relation(fields: [hospitalId], references: [id])
+  status       String    // PENDING, DISPATCHED, RESOLVED, CANCELLED
+  patientLat   Float
+  patientLng   Float
+  dispatchedAt DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Pharmacy {
+  id           String      @id @default(uuid())
+  name         String
+  address      String
+  latitude     Float
+  longitude    Float
+  owners       User[]
+  inventory    Inventory[]
+  posItems     POSItem[]
+  orders       Order[]
+  b2bOrders    B2BPurchaseOrder[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Inventory {
+  id           String   @id @default(uuid())
+  pharmacyId   String
+  pharmacy     Pharmacy @relation(fields: [pharmacyId], references: [id])
+  productName  String
+  sku          String
+  quantity     Int
+  safetyStock  Int
+  price        Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([pharmacyId, sku])
+}
+
+model POSItem {
+  id            String   @id @default(uuid())
+  pharmacyId    String
+  pharmacy      Pharmacy @relation(fields: [pharmacyId], references: [id])
+  transactionId String
+  sku           String
+  quantity      Int
+  pricePaid     Float
+  createdAt     DateTime @default(now())
+}
+
+model Wholesaler {
+  id           String             @id @default(uuid())
+  name         String
+  admins       User[]
+  b2bOrders    B2BPurchaseOrder[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+model B2BPurchaseOrder {
+  id           String     @id @default(uuid())
+  pharmacyId   String
+  pharmacy     Pharmacy   @relation(fields: [pharmacyId], references: [id])
+  wholesalerId String
+  wholesaler   Wholesaler @relation(fields: [wholesalerId], references: [id])
+  status       String     // PENDING, SHIPPED, DELIVERED
+  totalAmount  Float
+  itemsJSON    String     // List of SKUs and quantities
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Order {
+  id              String        @id @default(uuid())
+  patientId       String
+  patient         User          @relation(fields: [patientId], references: [id])
+  pharmacyId      String
+  pharmacy        Pharmacy      @relation(fields: [pharmacyId], references: [id])
+  status          String        // PENDING, PAID, PACKED, OUT_FOR_DELIVERY, DELIVERED
+  subtotal        Float
+  deliveryFee     Float
+  platformFee     Float         @default(10.0)
+  discount        Float         @default(0.0)
+  total           Float
+  paymentIntentId String?       // Stripe Payment Intent
+  items           OrderItem[]
+  deliveryJob     DeliveryJob?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  sku       String
+  quantity  Int
+  price     Float
+}
+
+model DeliveryJob {
+  id         String   @id @default(uuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id])
+  driverId   String?
+  driver     User?    @relation(fields: [driverId], references: [id])
+  status     String   // LOOKING_FOR_DRIVER, ACCEPTED, PICKED_UP, DELIVERED
+  pickupLat  Float
+  pickupLng  Float
+  dropoffLat Float
+  dropoffLng Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PlatformTransaction {
+  id              String   @id @default(uuid())
+  orderId         String
+  totalAmount     Float
+  pharmacyShare   Float
+  platformShare   Float
+  deliveryShare   Float
+  stripeTransferId String?
+  createdAt       DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  userId    String?
+  details   String   // JSON payload of changes
+  createdAt DateTime @default(now())
+}

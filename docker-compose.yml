@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS extension pre-installed
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: medigo_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: medigo123
+      POSTGRES_DB: medigo
+    ports:
+      - "5432:5432"
+    volumes:
+      - medigo_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Redis for WebSocket Pub/Sub and Caching
+  redis:
+    image: redis:7-alpine
+    container_name: medigo_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - medigo_redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  medigo_pgdata:
+  medigo_redisdata:
